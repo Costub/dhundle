@@ -45,8 +45,15 @@ export async function getPuzzleForDate(dateStr: string): Promise<PuzzleDefinitio
   const rows = await supabaseGet<PuzzleRow[]>(
     `puzzles?puzzle_date=eq.${dateStr}&status=in.(scheduled,published)&select=id,song_id,puzzle_date,official_link,stems(position,instrument_label,storage_path)&limit=1`
   );
-  if (rows?.[0]) return fromPuzzleRow(rows[0]);
+  if (rows) {
+    // Supabase is the active backend: it alone decides what's scheduled.
+    // Falling back to local JSON here would resurface content the admin
+    // can't see or manage.
+    if (rows[0]) return fromPuzzleRow(rows[0]);
+    throw new Error(`No puzzle available for ${dateStr}`);
+  }
 
+  // Local/dev fallback (Supabase not configured).
   const exact = PUZZLES.find((p) => p.date === dateStr);
   if (exact) return exact;
   const undated = PUZZLES.filter((p) => !p.date);

@@ -75,11 +75,22 @@ token when it expires, so signed-in players stay signed in between daily
 visits. It activates automatically once the Supabase env vars are real; with
 placeholders it no-ops. It skips `/stems/` audio and `_next/` assets.
 
+## Recommended Content Workflow (local admin → cloud DB)
+
+The admin's backend follows the env vars, not where the server runs. With the
+real Supabase URL + service-role key in your local `.env.local`, running
+`npm run dev` and using `/admin` locally writes straight to production
+Supabase (storage bucket + tables) — the deployed site serves it immediately.
+Do stem uploads from the local admin with "Trim on upload with ffmpeg" ON
+(local ffmpeg + `FFMPEG_PATH`); you never need ffmpeg on Vercel. Remember:
+with real creds locally, the local admin edits the LIVE database.
+
 ## Production Caveats
 
-- **ffmpeg is not available on Vercel serverless.** In production, turn off
-  "Trim on upload with ffmpeg" in `/admin` and upload stems already trimmed
-  to one hook length (prepare them locally with `scripts/trim-stems.mjs`).
+- **ffmpeg is not available on Vercel serverless.** Trimming through the
+  *deployed* admin panel will fail — use the local-admin workflow above, or
+  upload pre-trimmed stems (prepared with `scripts/trim-stems.mjs`) with
+  "Trim on upload" turned off.
 - **Keep the repo private**: `data/puzzles.json` and `data/songs.json` reveal
   the future schedule and answer pool (production content should live in
   Supabase anyway).
