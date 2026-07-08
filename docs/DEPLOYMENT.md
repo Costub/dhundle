@@ -88,9 +88,14 @@ with real creds locally, the local admin edits the LIVE database.
 ## Production Caveats
 
 - **ffmpeg is not available on Vercel serverless.** Trimming through the
-  *deployed* admin panel will fail — use the local-admin workflow above, or
+  *deployed* admin panel will fail - use the local-admin workflow above, or
   upload pre-trimmed stems (prepared with `scripts/trim-stems.mjs`) with
   "Trim on upload" turned off.
+- **"Unable to decode audio data" usually means the stem URL did not return
+  audio.** First check the browser network response for a stem URL. If Supabase
+  returns `Bucket not found`, create the public `stems` bucket and re-upload
+  the stems. If it returns `Object not found`, confirm the `stems.storage_path`
+  values match objects like `YYYY-MM-DD/stem-1.opus`.
 - **Keep the repo private**: `data/puzzles.json` and `data/songs.json` reveal
   the future schedule and answer pool (production content should live in
   Supabase anyway).

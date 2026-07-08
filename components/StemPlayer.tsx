@@ -15,6 +15,8 @@ interface ActiveSource {
   gain: GainNode;
 }
 
+const AUDIO_LOAD_TIMEOUT_MS = 12_000;
+
 /**
  * Multi-stem synchronized player. All revealed stems start on the same
  * AudioContext clock so they stay sample-locked; muting a stem just zeroes
@@ -33,6 +35,7 @@ export default function StemPlayer({ stems, revealedCount }: StemPlayerProps) {
   const [progress, setProgress] = useState(0);
   const [duration, setDuration] = useState(0);
   const [muted, setMuted] = useState<Set<number>>(new Set());
+  const [error, setError] = useState<string | null>(null);
 
   const revealed = stems.slice(0, revealedCount);
 
@@ -45,9 +48,34 @@ export default function StemPlayer({ stems, revealedCount }: StemPlayerProps) {
     async (src: string): Promise<AudioBuffer> => {
       const cached = buffersRef.current.get(src);
       if (cached) return cached;
-      const res = await fetch(src);
+      const controller = new AbortController();
+      const timeout = window.setTimeout(() => controller.abort(), AUDIO_LOAD_TIMEOUT_MS);
+      let res: Response;
+      try {
+        res = await fetch(src, { signal: controller.signal });
+      } catch (err) {
+        if (err instanceof DOMException && err.name === "AbortError") {
+          throw new Error("Audio load timed out. Check that the stem file is public and reachable.");
+        }
+        throw new Error("Could not reach the audio file. Check the stem URL and Supabase bucket.");
+      } finally {
+        window.clearTimeout(timeout);
+      }
+      if (!res.ok) {
+        const detail = await res.text().catch(() => "");
+        throw new Error(
+          `Could not load audio (${res.status}). ${detail.slice(0, 120) || "Check the stem URL."}`
+        );
+      }
       const data = await res.arrayBuffer();
-      const buf = await getCtx().decodeAudioData(data);
+      let buf: AudioBuffer;
+      try {
+        buf = await getCtx().decodeAudioData(data);
+      } catch {
+        throw new Error(
+          `Could not decode audio. Check that the stem file is a valid browser-playable audio file.`
+        );
+      }
       buffersRef.current.set(src, buf);
       return buf;
     },
@@ -81,6 +109,7 @@ export default function StemPlayer({ stems, revealedCount }: StemPlayerProps) {
   const play = useCallback(
     async (fromStart = false) => {
       setLoading(true);
+      setError(null);
       try {
         const ctx = getCtx();
         if (ctx.state === "suspended") await ctx.resume();
@@ -113,6 +142,9 @@ export default function StemPlayer({ stems, revealedCount }: StemPlayerProps) {
           rafRef.current = requestAnimationFrame(tick);
         };
         rafRef.current = requestAnimationFrame(tick);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Could not play audio.");
+        setPlaying(false);
       } finally {
         setLoading(false);
       }
@@ -258,6 +290,11 @@ export default function StemPlayer({ stems, revealedCount }: StemPlayerProps) {
           );
         })}
       </div>
+      {error && (
+        <p role="alert" className="relative mt-4 rounded-xl border border-danger/30 bg-danger/10 px-3 py-2 text-xs leading-relaxed text-danger">
+          {error}
+        </p>
+      )}
     </div>
   );
 }
