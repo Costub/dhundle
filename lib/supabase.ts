@@ -126,9 +126,9 @@ export async function supabaseUploadStem(
 }
 
 export function publicStorageUrl(storagePath: string): string {
-  const config = getSupabaseConfig();
-  if (!config || storagePath.startsWith("/") || storagePath.startsWith("http")) {
+  if (storagePath.startsWith("/") || storagePath.startsWith("http")) {
     return storagePath;
   }
-  return `${config.url}/storage/v1/object/public/stems/${storagePath}`;
+  if (!getSupabaseConfig()) return storagePath;
+  return `/api/stems/${storagePath.split("/").map(encodeURIComponent).join("/")}`;
 }

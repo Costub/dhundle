@@ -9,7 +9,8 @@ This app is deploy-ready once external services are connected.
    CLI. As of 2026-07-08 that means `0001_initial_schema.sql`,
    `0002_leaderboard.sql`, `0003_song_actors.sql`, and
    `0004_user_result_history.sql`.
-3. Create a public storage bucket named `stems`.
+3. Create a storage bucket named `stems`. It may be private; the app serves
+   stems through `/api/stems/...` with the service-role key.
 4. Copy the project URL and `service_role` key from Project Settings > API into
    `NEXT_PUBLIC_SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY`. Placeholder
    values like `https://<project-ref>.supabase.co` are detected and treated as
@@ -92,10 +93,11 @@ with real creds locally, the local admin edits the LIVE database.
   upload pre-trimmed stems (prepared with `scripts/trim-stems.mjs`) with
   "Trim on upload" turned off.
 - **"Unable to decode audio data" usually means the stem URL did not return
-  audio.** First check the browser network response for a stem URL. If Supabase
-  returns `Bucket not found`, create the public `stems` bucket and re-upload
-  the stems. If it returns `Object not found`, confirm the `stems.storage_path`
-  values match objects like `YYYY-MM-DD/stem-1.opus`.
+  audio.** First check the browser network response for `/api/stems/...`. If
+  Supabase returns `Bucket not found`, confirm the bucket name is exactly
+  `stems` in the same project as `NEXT_PUBLIC_SUPABASE_URL`. If it returns
+  `Object not found`, confirm the `stems.storage_path` values match objects
+  like `YYYY-MM-DD/stem-1.opus`.
 - **Keep the repo private**: `data/puzzles.json` and `data/songs.json` reveal
   the future schedule and answer pool (production content should live in
   Supabase anyway).
