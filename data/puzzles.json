@@ -1,0 +1,30 @@
+[
+  {
+    "id": "2026-07-08",
+    "songId": "bhaag-dk-bose-aandhi-aayi-delhi-belly",
+    "date": "2026-07-08",
+    "stems": [
+      {
+        "position": 1,
+        "instrument": "Drums",
+        "src": "/stems/2026-07-08/stem-1.opus"
+      },
+      {
+        "position": 2,
+        "instrument": "Bass",
+        "src": "/stems/2026-07-08/stem-2.opus"
+      },
+      {
+        "position": 3,
+        "instrument": "Synths",
+        "src": "/stems/2026-07-08/stem-3.opus"
+      },
+      {
+        "position": 4,
+        "instrument": "Vocals",
+        "src": "/stems/2026-07-08/stem-4.opus"
+      }
+    ],
+    "officialLink": "https://open.spotify.com/track/1sxh0eqIb8ulYypPuq6ZRu?si=f3a5cad7e4804035"
+  }
+]

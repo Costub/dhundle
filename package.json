@@ -6,7 +6,9 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "validate:puzzles": "node scripts/add-puzzle.mjs --validate",
+    "stems:trim": "node scripts/trim-stems.mjs"
   },
   "dependencies": {
     "next": "16.2.10",

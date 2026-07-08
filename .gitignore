@@ -39,3 +39,13 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# agent tooling (vendored skills + machine-local settings — not app code)
+/.claude/
+/.agents/
+
+# stem staging area (source songs + downloaded stems — never commit audio sources)
+/incoming/
+
+# dev-mode game results (Supabase handles this in production)
+/data/results.local.json
