@@ -51,17 +51,27 @@ export default function RevealCard({
   const maxAttempts = state.maxAttempts ?? 6;
 
   const share = async () => {
-    const text = buildShareText(state);
+    const appUrl = "https://dhoondle.fun";
+    const shareUrl = isArchive
+      ? `${appUrl}/puzzle/${state.date}`
+      : appUrl;
+    const text = buildShareText(state, { url: shareUrl });
     try {
       if (navigator.share) {
         await navigator.share({ text });
-      } else {
-        await navigator.clipboard.writeText(text);
-        setCopied(true);
-        setTimeout(() => setCopied(false), 2000);
+        return;
       }
-    } catch {
+    } catch (error) {
       // User cancelled share sheet.
+      if (error instanceof DOMException && error.name === "AbortError") return;
+    }
+
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      // Clipboard can be blocked in non-secure contexts.
     }
   };
 

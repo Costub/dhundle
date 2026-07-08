@@ -19,6 +19,11 @@ interface StemDraft {
   label: string;
 }
 
+interface ReusablePuzzle {
+  puzzle: PuzzleDefinition;
+  song?: Song;
+}
+
 function addDays(dateStr: string, days: number): string {
   const date = new Date(`${dateStr}T00:00:00.000Z`);
   date.setUTCDate(date.getUTCDate() + days);
@@ -129,6 +134,7 @@ export default function AdminDashboard({
       {tab === "schedule" && (
         <ScheduleTab
           songs={songs}
+          puzzles={puzzles}
           defaultDate={firstGap}
           scheduledDates={scheduledDates}
           onScheduled={(date) => {
@@ -264,12 +270,14 @@ function Overview({
 
 function ScheduleTab({
   songs,
+  puzzles,
   defaultDate,
   scheduledDates,
   onScheduled,
   onError,
 }: {
   songs: Song[];
+  puzzles: PuzzleDefinition[];
   defaultDate: string;
   scheduledDates: Set<string | undefined>;
   onScheduled: (date: string) => void;
@@ -278,6 +286,7 @@ function ScheduleTab({
   const [date, setDate] = useState(defaultDate);
   const [songQuery, setSongQuery] = useState("");
   const [songId, setSongId] = useState("");
+  const [reusePuzzleId, setReusePuzzleId] = useState("");
   const [officialLink, setOfficialLink] = useState("");
   const [stems, setStems] = useState<StemDraft[]>([]);
   const [trimOnUpload, setTrimOnUpload] = useState(true);
@@ -305,6 +314,15 @@ function ScheduleTab({
       .slice(0, 8);
   }, [songs, songQuery]);
   const selected = songs.find((s) => s.id === songId);
+  const reusablePuzzles = useMemo<ReusablePuzzle[]>(
+    () =>
+      [...puzzles]
+        .filter((p) => Boolean(p.date) && p.stems.length >= MIN_STEMS)
+        .sort((a, b) => String(b.date).localeCompare(String(a.date)))
+        .map((puzzle) => ({ puzzle, song: songs.find((s) => s.id === puzzle.songId) })),
+    [puzzles, songs]
+  );
+  const reuseSource = reusablePuzzles.find(({ puzzle }) => puzzle.id === reusePuzzleId);
 
   const stopPreview = () => {
     for (const source of previewSourcesRef.current) {
@@ -340,8 +358,26 @@ function ScheduleTab({
     []
   );
 
+  const applyReusePuzzle = (id: string) => {
+    setReusePuzzleId(id);
+    const source = reusablePuzzles.find(({ puzzle }) => puzzle.id === id);
+    if (!source) return;
+    stopPreview();
+    setSongId(source.puzzle.songId);
+    setSongQuery("");
+    setOfficialLink(source.puzzle.officialLink ?? "");
+    setStems([]);
+    setPreviewStatus(null);
+    if (fileRef.current) fileRef.current.value = "";
+  };
+
+  const clearReusePuzzle = () => {
+    setReusePuzzleId("");
+  };
+
   const addFiles = (list: FileList | null) => {
     if (!list) return;
+    setReusePuzzleId("");
     stopPreview();
     const next = [...stems];
     for (const file of Array.from(list)) {
@@ -430,6 +466,36 @@ function ScheduleTab({
   };
 
   const submit = async () => {
+    if (reuseSource) {
+      if (scheduledDates.has(date) && !confirm(`${date} already has a puzzle. Replace it?`)) {
+        return;
+      }
+      stopPreview();
+      try {
+        setProgress("Scheduling reused stems...");
+        const res = await fetch("/api/admin/puzzles", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            copyFromPuzzleId: reuseSource.puzzle.id,
+            date,
+            officialLink,
+          }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error ?? "Scheduling failed");
+        setReusePuzzleId("");
+        setOfficialLink("");
+        setPreviewStatus(null);
+        onScheduled(date);
+      } catch (e) {
+        onError(e instanceof Error ? e.message : "Something went wrong");
+      } finally {
+        setProgress(null);
+      }
+      return;
+    }
+
     if (!selected) return onError("Pick a song first.");
     if (stems.length < MIN_STEMS || stems.length > MAX_STEMS) {
       return onError(`Add ${MIN_STEMS} to ${MAX_STEMS} stem files.`);
@@ -499,6 +565,43 @@ function ScheduleTab({
 
         <div className="grid gap-1.5">
           <label className="tiny-label">
+            Reuse stems from date
+          </label>
+          <select
+            value={reusePuzzleId}
+            onChange={(e) => applyReusePuzzle(e.target.value)}
+            className={inputCls}
+          >
+            <option value="">Upload new stems</option>
+            {reusablePuzzles.map(({ puzzle, song }) => (
+              <option key={puzzle.id} value={puzzle.id}>
+                {puzzle.date ?? puzzle.id}
+                {song ? ` - ${song.title}` : ""}
+              </option>
+            ))}
+          </select>
+          <p className="text-xs leading-relaxed text-muted">
+            Pick a previous scheduled date to reuse its stored Supabase stem files for this new
+            date. No files are uploaded again.
+          </p>
+          {reuseSource && (
+            <div className="rounded-xl border border-gold/30 bg-gold/10 px-3 py-2 text-xs text-muted">
+              <p className="font-semibold text-ink">
+                Reusing {reuseSource.puzzle.date ?? reuseSource.puzzle.id}
+                {reuseSource.song ? ` - ${reuseSource.song.title}` : ""}
+              </p>
+              <p className="mt-1">
+                {reuseSource.puzzle.stems.length} stems will be copied into the new puzzle row.
+              </p>
+              <button onClick={clearReusePuzzle} className={buttonQuiet + " mt-2"}>
+                Upload different stems instead
+              </button>
+            </div>
+          )}
+        </div>
+
+        <div className="grid gap-1.5">
+          <label className="tiny-label">
             Song
           </label>
           {selected ? (
@@ -509,9 +612,15 @@ function ScheduleTab({
                   — {selected.movie} ({selected.year})
                 </span>
               </span>
-              <button onClick={() => setSongId("")} className={buttonQuiet}>
-                Change
-              </button>
+              {reuseSource ? (
+                <span className="shrink-0 rounded-full border border-line bg-surface/50 px-2 py-1 text-[10px] font-bold uppercase text-subtle">
+                  copied
+                </span>
+              ) : (
+                <button onClick={() => setSongId("")} className={buttonQuiet}>
+                  Change
+                </button>
+              )}
             </div>
           ) : (
             <>
@@ -561,21 +670,47 @@ function ScheduleTab({
 
       <section className="stage-card grid content-start gap-3 rounded-2xl p-4">
         <label className="tiny-label">
-          Stems ({stems.length} selected, 4-6 required) - reveal order, least to most identifiable
+          {reuseSource
+            ? `Reused stems (${reuseSource.puzzle.stems.length}) - copied from ${reuseSource.puzzle.date ?? reuseSource.puzzle.id}`
+            : `Stems (${stems.length} selected, 4-6 required) - reveal order, least to most identifiable`}
         </label>
+        {reuseSource && (
+          <div className="grid gap-2 rounded-2xl border border-gold/30 bg-gold/10 px-3 py-3">
+            {reuseSource.puzzle.stems.map((stem) => (
+              <div
+                key={`${reuseSource.puzzle.id}-${stem.position}`}
+                className="flex items-center gap-3 rounded-xl border border-line bg-surface/60 px-3 py-2"
+              >
+                <span className="w-5 text-center font-mono text-xs text-subtle">
+                  {stem.position}
+                </span>
+                <span className="min-w-0 flex-1 text-sm font-semibold text-ink">
+                  {stem.instrument}
+                </span>
+                <span className="hidden max-w-48 truncate font-mono text-[10px] text-subtle sm:block">
+                  {stem.src}
+                </span>
+              </div>
+            ))}
+            <p className="text-xs leading-relaxed text-muted">
+              These saved stems will be reused as-is. No upload or trimming will run.
+            </p>
+          </div>
+        )}
         <input
           ref={fileRef}
           type="file"
           multiple
           accept=".opus,.ogg,.mp3,.m4a,.wav,.webm,audio/*"
+          disabled={Boolean(reuseSource)}
           onChange={(e) => addFiles(e.target.files)}
-          className="cursor-pointer rounded-2xl border border-dashed border-line-strong bg-surface/60 px-3 py-6 text-sm text-muted file:mr-3 file:cursor-pointer file:rounded-lg file:border-0 file:bg-gold file:px-3 file:py-1.5 file:text-sm file:font-bold file:text-night"
+          className="cursor-pointer rounded-2xl border border-dashed border-line-strong bg-surface/60 px-3 py-6 text-sm text-muted disabled:hidden file:mr-3 file:cursor-pointer file:rounded-lg file:border-0 file:bg-gold file:px-3 file:py-1.5 file:text-sm file:font-bold file:text-night"
         />
-        <p className="text-xs text-muted">
+        <p className={"text-xs text-muted " + (reuseSource ? "hidden" : "")}>
           Edit each Player label below; that exact label is what players see on the unlocked
           stem chip.
         </p>
-        <div className="grid gap-3 rounded-2xl border border-line bg-surface/60 px-3 py-3 sm:grid-cols-[1fr_1fr_auto]">
+        <div className={"grid gap-3 rounded-2xl border border-line bg-surface/60 px-3 py-3 sm:grid-cols-[1fr_1fr_auto] " + (reuseSource ? "hidden" : "")}>
           <label className="tiny-label flex items-center gap-2 sm:col-span-3">
             <input
               type="checkbox"
@@ -629,7 +764,7 @@ function ScheduleTab({
             </p>
           )}
         </div>
-        <ul className="grid gap-2">
+        <ul className={"grid gap-2 " + (reuseSource ? "hidden" : "")}>
           {stems.map((stem, i) => (
             <li
               key={`${stem.file.name}-${i}`}
@@ -664,12 +799,12 @@ function ScheduleTab({
             </li>
           ))}
         </ul>
-        <p className="text-xs leading-relaxed text-subtle">
+        <p className={"text-xs leading-relaxed text-subtle " + (reuseSource ? "hidden" : "")}>
           Upload raw or pre-trimmed stems together. The preview uses the selected trim window,
           and scheduling stores date-based Opus files so URLs cannot spoil the answer.
         </p>
         <button onClick={() => void submit()} disabled={progress !== null} className={buttonPrimary}>
-          {progress ?? "Upload & schedule"}
+          {progress ?? (reuseSource ? "Schedule reused stems" : "Upload & schedule")}
         </button>
       </section>
     </div>

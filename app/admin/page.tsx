@@ -58,7 +58,7 @@ export default async function AdminPage({
     return <MissingAccess error={params.error} />;
   }
 
-  const [songs, puzzles] = await Promise.all([getAllSongs(), listScheduledPuzzles(60)]);
+  const [songs, puzzles] = await Promise.all([getAllSongs(), listScheduledPuzzles(200)]);
 
   return (
     <main className="wide-shell">

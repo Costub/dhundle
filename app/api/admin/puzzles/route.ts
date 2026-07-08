@@ -1,7 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { assertAdmin } from "@/lib/adminAuth";
 import type { AdminPuzzleInput } from "@/lib/adminPuzzles";
-import { deletePuzzle, scheduleOrReplacePuzzle } from "@/lib/adminStore";
+import {
+  deletePuzzle,
+  scheduleOrReplacePuzzle,
+  scheduleOrReplacePuzzleFromExisting,
+} from "@/lib/adminStore";
 
 export const dynamic = "force-dynamic";
 
@@ -17,7 +21,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Admin access required" }, { status: 401 });
   }
 
-  let body: AdminPuzzleInput;
+  let body: Partial<AdminPuzzleInput> & { copyFromPuzzleId?: unknown };
   try {
     body = await req.json();
   } catch {
@@ -25,18 +29,26 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    await scheduleOrReplacePuzzle({
-      songId: String(body.songId ?? ""),
-      date: String(body.date ?? ""),
-      officialLink: body.officialLink ? String(body.officialLink) : undefined,
-      stems: Array.isArray(body.stems)
-        ? body.stems.map((s) => ({
-            position: Number(s.position),
-            instrument: String(s.instrument ?? ""),
-            storagePath: String(s.storagePath ?? ""),
-          }))
-        : [],
-    });
+    if (body.copyFromPuzzleId) {
+      await scheduleOrReplacePuzzleFromExisting({
+        sourcePuzzleId: String(body.copyFromPuzzleId),
+        date: String(body.date ?? ""),
+        officialLink: body.officialLink ? String(body.officialLink) : undefined,
+      });
+    } else {
+      await scheduleOrReplacePuzzle({
+        songId: String(body.songId ?? ""),
+        date: String(body.date ?? ""),
+        officialLink: body.officialLink ? String(body.officialLink) : undefined,
+        stems: Array.isArray(body.stems)
+          ? body.stems.map((s) => ({
+              position: Number(s.position),
+              instrument: String(s.instrument ?? ""),
+              storagePath: String(s.storagePath ?? ""),
+            }))
+          : [],
+      });
+    }
     return NextResponse.json({ ok: true });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Could not schedule puzzle";

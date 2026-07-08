@@ -8,6 +8,7 @@ import { schedulePuzzle, validatePuzzle, type AdminPuzzleInput } from "./adminPu
 import {
   isSupabaseConfigured,
   supabaseDelete,
+  supabaseGet,
   supabasePost,
   supabaseUploadStem,
 } from "./supabase";
@@ -58,6 +59,35 @@ export async function storeStemFile(
 
 // ------------------------------------------------------------------ puzzles
 
+interface ExistingPuzzleRow {
+  id: string;
+  song_id: string;
+  official_link: string | null;
+  stems: {
+    position: number;
+    instrument_label: string;
+    storage_path: string;
+  }[];
+}
+
+interface ReusePuzzleInput {
+  sourcePuzzleId: string;
+  date: string;
+  officialLink?: string;
+}
+
+function storagePathFromStemSrc(src: string): string {
+  const proxyPrefix = "/api/stems/";
+  if (src.startsWith(proxyPrefix)) {
+    return src
+      .slice(proxyPrefix.length)
+      .split("/")
+      .map((part) => decodeURIComponent(part))
+      .join("/");
+  }
+  return src;
+}
+
 /** Schedule (or replace) the puzzle for a date, in Supabase or local JSON. */
 export async function scheduleOrReplacePuzzle(input: AdminPuzzleInput): Promise<void> {
   if (isSupabaseConfigured()) {
@@ -89,6 +119,51 @@ export async function scheduleOrReplacePuzzle(input: AdminPuzzleInput): Promise<
   next.push(entry);
   next.sort((a, b) => (a.date ?? "9999").localeCompare(b.date ?? "9999"));
   writeJson(PUZZLES_PATH, next);
+}
+
+/** Schedule a new date by reusing the song and stem rows from an existing puzzle. */
+export async function scheduleOrReplacePuzzleFromExisting(
+  input: ReusePuzzleInput
+): Promise<void> {
+  if (!input.sourcePuzzleId.trim()) throw new Error("Pick a previous puzzle to reuse");
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(input.date)) throw new Error("Date must be YYYY-MM-DD");
+
+  if (isSupabaseConfigured()) {
+    const rows = await supabaseGet<ExistingPuzzleRow[]>(
+      `puzzles?id=eq.${encodeURIComponent(input.sourcePuzzleId.trim())}&select=id,song_id,official_link,stems(position,instrument_label,storage_path)&limit=1`
+    );
+    const source = rows?.[0];
+    if (!source) throw new Error("Previous puzzle not found");
+    await scheduleOrReplacePuzzle({
+      songId: source.song_id,
+      date: input.date,
+      officialLink: input.officialLink?.trim() || source.official_link || undefined,
+      stems: [...(source.stems ?? [])]
+        .sort((a, b) => a.position - b.position)
+        .map((stem) => ({
+          position: stem.position,
+          instrument: stem.instrument_label,
+          storagePath: stem.storage_path,
+        })),
+    });
+    return;
+  }
+
+  const puzzles = readJson<PuzzleDefinition[]>(PUZZLES_PATH);
+  const source = puzzles.find((p) => p.id === input.sourcePuzzleId || p.date === input.sourcePuzzleId);
+  if (!source) throw new Error("Previous puzzle not found");
+  await scheduleOrReplacePuzzle({
+    songId: source.songId,
+    date: input.date,
+    officialLink: input.officialLink?.trim() || source.officialLink,
+    stems: [...source.stems]
+      .sort((a, b) => a.position - b.position)
+      .map((stem) => ({
+        position: stem.position,
+        instrument: stem.instrument,
+        storagePath: storagePathFromStemSrc(stem.src),
+      })),
+  });
 }
 
 /** Remove a puzzle (by Supabase id or local id/date). Stem files are kept. */
