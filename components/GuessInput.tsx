@@ -12,6 +12,7 @@ export type GuessPick =
 interface GuessInputProps {
   disabled: boolean;
   attemptsLeft: number;
+  revealLabel: string;
   onGuess: (pick: GuessPick) => void;
   onSkip: () => void;
 }
@@ -24,6 +25,7 @@ interface GuessInputProps {
 export default function GuessInput({
   disabled,
   attemptsLeft,
+  revealLabel,
   onGuess,
   onSkip,
 }: GuessInputProps) {
@@ -133,7 +135,7 @@ export default function GuessInput({
           ) : (
             <SkipIcon className="h-4 w-4" />
           )}
-          {lastChance ? "Give up" : "Skip"}
+          {lastChance ? "Give up" : revealLabel}
         </button>
       </div>
 

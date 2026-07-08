@@ -64,6 +64,7 @@ export default function Game({ archiveDate }: GameProps) {
   const [state, setState] = useState<GameState | null>(null);
   const [stats, setStats] = useState<PlayerStats>(emptyStats());
   const [showHelp, setShowHelp] = useState(false);
+  const [confirmRevealWithoutGuess, setConfirmRevealWithoutGuess] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
@@ -284,6 +285,10 @@ export default function Game({ archiveDate }: GameProps) {
   const revealedCount = over
     ? puzzle.stems.length
     : Math.min(attemptsUsed + 1, puzzle.stems.length);
+  const nextStemToUnlock = !over ? puzzle.stems[revealedCount] : undefined;
+  const revealWithoutGuessLabel = nextStemToUnlock
+    ? `Unlock ${nextStemToUnlock.instrument}`
+    : "Reveal without guessing";
 
   return (
     <div className="space-y-4">
@@ -292,17 +297,15 @@ export default function Game({ archiveDate }: GameProps) {
       <div className="animate-fade-up">
         <StemPlayer stems={puzzle.stems} revealedCount={revealedCount} />
       </div>
-      <div className="animate-fade-up [animation-delay:60ms]">
-        <HintPanel hints={state.hints} canReveal={!over} onReveal={revealHint} />
-      </div>
 
       {!over && (
-        <div className="relative z-50 animate-fade-up [animation-delay:120ms]">
+        <div className="relative z-50 animate-fade-up [animation-delay:60ms]">
           <GuessInput
             disabled={submitting}
             attemptsLeft={maxAttempts - attemptsUsed}
+            revealLabel={revealWithoutGuessLabel}
             onGuess={(entry) => void submitAttempt(entry)}
-            onSkip={() => void submitAttempt(null)}
+            onSkip={() => setConfirmRevealWithoutGuess(true)}
           />
         </div>
       )}
@@ -316,8 +319,53 @@ export default function Game({ archiveDate }: GameProps) {
         <GuessList guesses={state.guesses} maxAttempts={maxAttempts} />
       </div>
 
+      {!over && (
+        <div className="animate-fade-up [animation-delay:220ms]">
+          <HintPanel hints={state.hints} canReveal onReveal={revealHint} />
+        </div>
+      )}
+
       {over && (
         <RevealCard state={state} stats={stats} mode={isArchive ? "archive" : "daily"} />
+      )}
+
+      {confirmRevealWithoutGuess && !over && (
+        <div
+          className="fixed inset-0 z-[120] flex items-end justify-center bg-night/45 p-4 backdrop-blur-sm sm:items-center"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Reveal without guessing"
+          onClick={() => setConfirmRevealWithoutGuess(false)}
+        >
+          <div
+            className="stage-panel w-full max-w-sm animate-scale-in p-5"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <p className="tiny-label">Reveal without guessing?</p>
+            <h2 className="mt-2 text-xl font-bold text-ink">{revealWithoutGuessLabel}</h2>
+            <p className="mt-2 text-sm leading-6 text-muted">
+              This uses one try without submitting a song.
+              {nextStemToUnlock ? ` It will reveal ${nextStemToUnlock.instrument}.` : ""}
+            </p>
+            <div className="mt-5 grid grid-cols-2 gap-2">
+              <button
+                onClick={() => setConfirmRevealWithoutGuess(false)}
+                className="btn-quiet justify-center py-3"
+              >
+                Keep guessing
+              </button>
+              <button
+                onClick={() => {
+                  setConfirmRevealWithoutGuess(false);
+                  void submitAttempt(null);
+                }}
+                className="btn-primary justify-center py-3"
+              >
+                Reveal
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {showHelp && <HowToPlay onClose={() => setShowHelp(false)} />}

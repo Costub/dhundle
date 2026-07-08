@@ -265,7 +265,7 @@ export default function StemPlayer({ stems, revealedCount }: StemPlayerProps) {
               onClick={() => toggleMute(stem.position)}
               aria-label={
                 !isRevealed
-                  ? `Instrument ${stem.position} locked`
+                  ? `${stem.instrument} locked`
                   : `${stem.instrument} — ${isMuted ? "unmute" : "mute"}`
               }
               title={isRevealed ? "Tap to mute or unmute" : "Unlocks with your next attempt"}
@@ -285,7 +285,7 @@ export default function StemPlayer({ stems, revealedCount }: StemPlayerProps) {
               ) : (
                 <VolumeIcon className="h-3.5 w-3.5" />
               )}
-              {isRevealed ? stem.instrument : `Stem ${stem.position}`}
+              {stem.instrument}
             </button>
           );
         })}

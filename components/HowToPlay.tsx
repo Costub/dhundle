@@ -11,7 +11,7 @@ const STEPS = [
   {
     icon: SearchIcon,
     title: "Guess with the stems",
-    body: "Every wrong guess or skip unlocks the next instrument. Puzzles use 4-6 stems.",
+    body: "Every wrong guess or reveal without guessing unlocks the next instrument. Puzzles use 4-6 stems.",
   },
   {
     icon: SparklesIcon,

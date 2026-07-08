@@ -29,11 +29,11 @@ export default function HintPanel({ hints, canReveal, onReveal }: HintPanelProps
   return (
     <div>
       <div className="mb-2 flex items-baseline justify-between px-1">
-        <p className="tiny-label">Hints</p>
+        <p className="tiny-label">{canReveal ? "Still need help?" : "Hints"}</p>
         <p className="text-[11px] font-medium text-subtle">
           {revealed.size === 0
             ? canReveal
-              ? "Optional - each one counts"
+              ? "Reveal a clue"
               : "None used"
             : `${revealed.size} used`}
         </p>
@@ -85,7 +85,7 @@ export default function HintPanel({ hints, canReveal, onReveal }: HintPanelProps
                 ) : (
                   <>
                     <LockIcon className="h-3 w-3" />
-                    Tap to reveal
+                    Reveal
                   </>
                 )}
               </p>
