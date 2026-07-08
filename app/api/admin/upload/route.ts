@@ -15,7 +15,7 @@ function parseOptionalNumber(value: FormDataEntryValue | null): number | null {
   return Number.isFinite(parsed) ? parsed : NaN;
 }
 
-/** Upload one stem file for a date+position. Multipart: file, date, position, optional start/duration. */
+/** Upload one stem file. Multipart: file, date, position, optional batchId/start/duration. */
 export async function POST(req: NextRequest) {
   try {
     await assertAdmin();
@@ -33,6 +33,7 @@ export async function POST(req: NextRequest) {
   const file = form.get("file");
   const date = String(form.get("date") || "");
   const position = Number(form.get("position"));
+  const batchId = String(form.get("batchId") || "");
   const trimStart = parseOptionalNumber(form.get("start"));
   const trimDuration = parseOptionalNumber(form.get("duration"));
 
@@ -91,7 +92,7 @@ export async function POST(req: NextRequest) {
           duration: trimDuration ?? MIN_TRIM_DURATION,
         })
       : { data: original, ext };
-    const storagePath = await storeStemFile(date, position, prepared.ext, prepared.data);
+    const storagePath = await storeStemFile(date, position, prepared.ext, prepared.data, batchId);
     return NextResponse.json({ storagePath, trimmed: shouldTrim });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Upload failed";

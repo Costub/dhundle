@@ -3,8 +3,9 @@
 // Server-only — every caller must have passed assertAdmin() first.
 
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { randomUUID } from "node:crypto";
 import { join } from "node:path";
-import { schedulePuzzle, validatePuzzle, type AdminPuzzleInput } from "./adminPuzzles";
+import { validatePuzzle, type AdminPuzzleInput } from "./adminPuzzles";
 import {
   isSupabaseConfigured,
   supabaseDelete,
@@ -33,10 +34,16 @@ export const STEM_CONTENT_TYPES: Record<string, string> = {
   ".webm": "audio/webm",
 };
 
+function safeUploadBatchId(value?: string): string {
+  const id = value?.trim().toLowerCase() ?? "";
+  if (/^[a-z0-9][a-z0-9-]{0,63}$/.test(id)) return id;
+  return `upload-${randomUUID()}`;
+}
+
 /**
- * Store one stem file for a given date+position. Returns the storage path in
- * the shape the puzzle rows expect: bucket-relative for Supabase
- * ("2026-07-20/stem-1.opus"), site-relative for local dev ("/stems/...").
+ * Store one stem file for a date + anonymous upload batch + position. Returns
+ * the storage path in the shape the puzzle rows expect: bucket-relative for
+ * Supabase ("2026-07-20/upload-abc/stem-1.opus") or site-relative locally.
  * Paths are date-based on purpose — stem URLs are visible in devtools before
  * the game ends, so they must never mention the song.
  */
@@ -45,16 +52,18 @@ export async function storeStemFile(
   position: number,
   ext: string,
   data: Buffer,
+  uploadBatchId?: string,
 ): Promise<string> {
   const filename = `stem-${position}${ext}`;
+  const batchId = safeUploadBatchId(uploadBatchId);
   if (isSupabaseConfigured()) {
     const contentType = STEM_CONTENT_TYPES[ext] ?? "application/octet-stream";
-    return supabaseUploadStem(`${date}/${filename}`, data, contentType);
+    return supabaseUploadStem(`${date}/${batchId}/${filename}`, data, contentType);
   }
-  const dir = join(ROOT, "public", "stems", date);
+  const dir = join(ROOT, "public", "stems", date, batchId);
   mkdirSync(dir, { recursive: true });
   writeFileSync(join(dir, filename), data);
-  return `/stems/${date}/${filename}`;
+  return `/stems/${date}/${batchId}/${filename}`;
 }
 
 // ------------------------------------------------------------------ puzzles
@@ -90,20 +99,34 @@ function storagePathFromStemSrc(src: string): string {
 
 /** Schedule (or replace) the puzzle for a date, in Supabase or local JSON. */
 export async function scheduleOrReplacePuzzle(input: AdminPuzzleInput): Promise<void> {
+  validatePuzzle(input);
+
   if (isSupabaseConfigured()) {
-    // Replace stems wholesale so a re-schedule can't leave stale positions.
-    const existing = await supabasePost<{ id: string }[]>(
+    const puzzleRows = await supabasePost<{ id: string }[]>(
       "puzzles?on_conflict=puzzle_date",
-      { song_id: input.songId.trim(), puzzle_date: input.date, status: "scheduled" }
+      {
+        song_id: input.songId.trim(),
+        puzzle_date: input.date,
+        status: "scheduled",
+        official_link: input.officialLink?.trim() || null,
+      }
     );
-    const puzzleId = existing?.[0]?.id;
-    if (puzzleId) await supabaseDelete(`stems?puzzle_id=eq.${puzzleId}`);
-    await schedulePuzzle(input);
+    const puzzleId = puzzleRows?.[0]?.id;
+    if (!puzzleId) throw new Error("Could not resolve puzzle row");
+    await supabaseDelete(`stems?puzzle_id=eq.${encodeURIComponent(puzzleId)}`);
+    await supabasePost(
+      "stems?on_conflict=puzzle_id,position",
+      input.stems.map((stem) => ({
+        puzzle_id: puzzleId,
+        position: stem.position,
+        instrument_label: stem.instrument.trim(),
+        storage_path: stem.storagePath.trim(),
+      }))
+    );
     return;
   }
 
   // Local fallback mirrors scripts/add-puzzle.mjs conventions.
-  validatePuzzle(input);
   const puzzles = readJson<PuzzleDefinition[]>(PUZZLES_PATH);
   const stems: StemInfo[] = [...input.stems]
     .sort((a, b) => a.position - b.position)

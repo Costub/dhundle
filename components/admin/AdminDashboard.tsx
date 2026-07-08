@@ -47,6 +47,14 @@ function slugify(text: string): string {
     .replace(/^-+|-+$/g, "");
 }
 
+function makeUploadBatchId(): string {
+  const random =
+    typeof crypto !== "undefined" && "randomUUID" in crypto
+      ? crypto.randomUUID()
+      : `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
+  return `upload-${random}`.toLowerCase().replace(/[^a-z0-9-]/g, "-").slice(0, 64);
+}
+
 const inputCls = "input-field rounded-lg px-3 py-2";
 const buttonPrimary = "btn-primary rounded-lg px-4 py-2.5";
 const buttonQuiet = "btn-quiet rounded-lg px-3 py-1.5 text-xs";
@@ -508,6 +516,7 @@ function ScheduleTab({
     stopPreview();
     try {
       const uploaded = [];
+      const uploadBatchId = makeUploadBatchId();
       for (let i = 0; i < stems.length; i++) {
         setProgress(
           `${trimOnUpload ? "Trimming/uploading" : "Uploading"} ${i + 1} of ${stems.length}: ${stems[i].file.name}...`
@@ -516,6 +525,7 @@ function ScheduleTab({
         fd.append("file", stems[i].file);
         fd.append("date", date);
         fd.append("position", String(i + 1));
+        fd.append("batchId", uploadBatchId);
         if (trimOnUpload) {
           fd.append("start", String(trimStart));
           fd.append("duration", String(trimDuration));
