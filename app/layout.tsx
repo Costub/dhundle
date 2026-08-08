@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Geist_Mono, Poppins, Righteous } from "next/font/google";
+import { Analytics } from "@vercel/analytics/next";
 import "./globals.css";
 
 const geistMono = Geist_Mono({
@@ -37,7 +38,10 @@ export default function RootLayout({
       suppressHydrationWarning
       className={`${body.variable} ${geistMono.variable} ${display.variable} h-full antialiased`}
     >
-      <body className="flex min-h-full flex-col text-ink">{children}</body>
+      <body className="flex min-h-full flex-col text-ink">
+        {children}
+        <Analytics />
+      </body>
     </html>
   );
 }
