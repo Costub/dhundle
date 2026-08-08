@@ -1,5 +1,20 @@
 # Dhoondle Go-Live Roadmap
 
+## Latest Admin Multi-Date Pass
+
+Completed on 2026-07-08: `/admin` Schedule tab can assign one song+stems to a
+range of dates in a single action ("Schedule this song across a date range" →
+start + inclusive end, up to 92 days). Stems upload once; every date reuses the
+same stored files. `POST /api/admin/puzzles` now accepts `dates: string[]`
+(falls back to single `date`), loops server-side, and returns
+`{ ok, scheduled[], failed[] }`; conflicts are replaced after one confirm.
+Verified: tsc, eslint, isolated `next build`, and a live-backend E2E (throwaway
+song on 2027 dates → 3 rows with 4 stems each created in one request, guards
+for >92 dates and <4 stems both 400, full cleanup — real content untouched).
+Also fixed earlier this session: `getPuzzleForDate` no longer falls back to
+local JSON when Supabase is the active backend (the game was serving a stale
+committed puzzle the admin couldn't see); `data/*.json` emptied.
+
 ## Latest Pre-Deploy Audit Pass
 
 Completed on 2026-07-08 — full-project review before the first commit/deploy:

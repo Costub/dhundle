@@ -17,7 +17,10 @@ Open `/admin` (unlock with `ADMIN_SECRET` locally, or Google sign-in with an
   reorder/label the reveal ladder, then "Upload & schedule" does everything:
   ffmpeg trims each stem to the same Opus hook, files go to Supabase Storage
   when configured or `public/stems/<date>/` in local dev, and the puzzle row is
-  created/replaced.
+  created/replaced. Tick **"Schedule this song across a date range"** to assign
+  the same song+stems to every day between a start and end date (up to 92 days)
+  in one shot — the stems upload once and every date reuses the stored files.
+  Dates that already have a puzzle are replaced (you're asked to confirm first).
 - **Songs** - search the whole catalog, add, edit, or remove songs. Admin
   metadata is limited to Movie, Year, Artist, and Actor; title and aliases are
   catalog/search fields. The add-song form has a **"Prefill from Spotify"**

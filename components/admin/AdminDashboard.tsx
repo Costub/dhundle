@@ -145,8 +145,8 @@ export default function AdminDashboard({
           puzzles={puzzles}
           defaultDate={firstGap}
           scheduledDates={scheduledDates}
-          onScheduled={(date) => {
-            notify("ok", `Puzzle scheduled for ${date}.`);
+          onScheduled={(message) => {
+            notify("ok", message);
             router.refresh();
           }}
           onError={(m) => notify("error", m)}
@@ -292,6 +292,8 @@ function ScheduleTab({
   onError: (msg: string) => void;
 }) {
   const [date, setDate] = useState(defaultDate);
+  const [rangeMode, setRangeMode] = useState(false);
+  const [endDate, setEndDate] = useState(defaultDate);
   const [songQuery, setSongQuery] = useState("");
   const [songId, setSongId] = useState("");
   const [reusePuzzleId, setReusePuzzleId] = useState("");
@@ -331,6 +333,24 @@ function ScheduleTab({
     [puzzles, songs]
   );
   const reuseSource = reusablePuzzles.find(({ puzzle }) => puzzle.id === reusePuzzleId);
+
+  // Every date this schedule will write to: one day, or an inclusive range.
+  const targetDates = useMemo(() => {
+    const isDate = (d: string) => /^\d{4}-\d{2}-\d{2}$/.test(d);
+    if (!rangeMode) return isDate(date) ? [date] : [];
+    if (!isDate(date) || !isDate(endDate) || endDate < date) return [];
+    const out: string[] = [];
+    let d = date;
+    while (d <= endDate && out.length < 92) {
+      out.push(d);
+      d = addDays(d, 1);
+    }
+    return out;
+  }, [rangeMode, date, endDate]);
+  const conflictCount = useMemo(
+    () => targetDates.filter((d) => scheduledDates.has(d)).length,
+    [targetDates, scheduledDates]
+  );
 
   const stopPreview = () => {
     for (const source of previewSourcesRef.current) {
@@ -473,20 +493,45 @@ function ScheduleTab({
     }
   };
 
+  /** Turn the /api/admin/puzzles response into a user-facing summary. */
+  const scheduleSummary = (data: { scheduled?: string[]; failed?: { date: string; error: string }[] }): string => {
+    const ok = data.scheduled ?? [];
+    const failed = data.failed ?? [];
+    const range =
+      ok.length > 1 ? ` (${ok[0]} → ${ok[ok.length - 1]})` : ok.length === 1 ? ` (${ok[0]})` : "";
+    const base = `Scheduled ${ok.length} ${ok.length === 1 ? "date" : "dates"}${range}.`;
+    return failed.length ? `${base} ${failed.length} failed — check for conflicts.` : base;
+  };
+
+  const confirmConflicts = (): boolean => {
+    if (conflictCount === 0) return true;
+    return confirm(
+      `${conflictCount} of the ${targetDates.length} selected date${
+        targetDates.length === 1 ? "" : "s"
+      } already ${conflictCount === 1 ? "has" : "have"} a puzzle. Replace ${
+        conflictCount === 1 ? "it" : "them"
+      }?`
+    );
+  };
+
   const submit = async () => {
+    if (targetDates.length === 0) {
+      return onError(
+        rangeMode ? "Pick a valid date range (end on or after start)." : "Pick a date."
+      );
+    }
+
     if (reuseSource) {
-      if (scheduledDates.has(date) && !confirm(`${date} already has a puzzle. Replace it?`)) {
-        return;
-      }
+      if (!confirmConflicts()) return;
       stopPreview();
       try {
-        setProgress("Scheduling reused stems...");
+        setProgress(`Scheduling reused stems for ${targetDates.length} date(s)...`);
         const res = await fetch("/api/admin/puzzles", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             copyFromPuzzleId: reuseSource.puzzle.id,
-            date,
+            dates: targetDates,
             officialLink,
           }),
         });
@@ -495,7 +540,7 @@ function ScheduleTab({
         setReusePuzzleId("");
         setOfficialLink("");
         setPreviewStatus(null);
-        onScheduled(date);
+        onScheduled(scheduleSummary(data));
       } catch (e) {
         onError(e instanceof Error ? e.message : "Something went wrong");
       } finally {
@@ -510,11 +555,11 @@ function ScheduleTab({
     }
     const trimError = validateTrim();
     if (trimError) return onError(trimError);
-    if (scheduledDates.has(date) && !confirm(`${date} already has a puzzle. Replace it?`)) {
-      return;
-    }
+    if (!confirmConflicts()) return;
     stopPreview();
     try {
+      // Upload the stems once (under the first date's folder); every scheduled
+      // date reuses the same stored files, so no re-upload per day.
       const uploaded = [];
       const uploadBatchId = makeUploadBatchId();
       for (let i = 0; i < stems.length; i++) {
@@ -523,7 +568,7 @@ function ScheduleTab({
         );
         const fd = new FormData();
         fd.append("file", stems[i].file);
-        fd.append("date", date);
+        fd.append("date", targetDates[0]);
         fd.append("position", String(i + 1));
         fd.append("batchId", uploadBatchId);
         if (trimOnUpload) {
@@ -539,18 +584,18 @@ function ScheduleTab({
           storagePath: data.storagePath,
         });
       }
-      setProgress("Scheduling...");
+      setProgress(`Scheduling ${targetDates.length} date(s)...`);
       const res = await fetch("/api/admin/puzzles", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ songId, date, officialLink, stems: uploaded }),
+        body: JSON.stringify({ songId, dates: targetDates, officialLink, stems: uploaded }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Scheduling failed");
       setStems([]);
       setOfficialLink("");
       setPreviewStatus(null);
-      onScheduled(date);
+      onScheduled(scheduleSummary(data));
     } catch (e) {
       onError(e instanceof Error ? e.message : "Something went wrong");
     } finally {
@@ -562,14 +607,60 @@ function ScheduleTab({
     <div className="mt-6 grid gap-5 lg:grid-cols-2">
       <section className="stage-card grid content-start gap-4 rounded-2xl p-4">
         <div className="grid gap-1.5">
-          <label className="tiny-label">
-            Date (IST)
+          <label className="tiny-label">{rangeMode ? "Start date (IST)" : "Date (IST)"}</label>
+          <input
+            type="date"
+            value={date}
+            onChange={(e) => {
+              setDate(e.target.value);
+              if (endDate < e.target.value) setEndDate(e.target.value);
+            }}
+            className={inputCls}
+          />
+          <label className="tiny-label mt-1 flex items-center gap-2">
+            <input
+              type="checkbox"
+              checked={rangeMode}
+              onChange={(e) => {
+                setRangeMode(e.target.checked);
+                if (e.target.checked && endDate < date) setEndDate(date);
+              }}
+              className="h-4 w-4 accent-gold"
+            />
+            Schedule this song across a date range
           </label>
-          <input type="date" value={date} onChange={(e) => setDate(e.target.value)} className={inputCls} />
-          {scheduledDates.has(date) && (
-            <p className="text-xs font-medium text-gold">
-              This date already has a puzzle — scheduling will replace it.
+          {rangeMode && (
+            <div className="grid gap-1.5">
+              <label className="tiny-label">End date (IST, inclusive)</label>
+              <input
+                type="date"
+                value={endDate}
+                min={date}
+                onChange={(e) => setEndDate(e.target.value)}
+                className={inputCls}
+              />
+            </div>
+          )}
+          {targetDates.length > 1 ? (
+            <p className="text-xs font-medium text-ink">
+              {targetDates.length} days: {targetDates[0]} → {targetDates[targetDates.length - 1]}
+              {conflictCount > 0 && (
+                <span className="text-gold">
+                  {" "}
+                  · {conflictCount} already scheduled (will be replaced)
+                </span>
+              )}
             </p>
+          ) : (
+            !rangeMode &&
+            scheduledDates.has(date) && (
+              <p className="text-xs font-medium text-gold">
+                This date already has a puzzle — scheduling will replace it.
+              </p>
+            )
+          )}
+          {rangeMode && targetDates.length === 0 && (
+            <p className="text-xs font-medium text-danger">End date must be on or after the start date.</p>
           )}
         </div>
 
@@ -814,7 +905,10 @@ function ScheduleTab({
           and scheduling stores date-based Opus files so URLs cannot spoil the answer.
         </p>
         <button onClick={() => void submit()} disabled={progress !== null} className={buttonPrimary}>
-          {progress ?? (reuseSource ? "Schedule reused stems" : "Upload & schedule")}
+          {progress ??
+            (reuseSource
+              ? `Schedule reused stems${targetDates.length > 1 ? ` (${targetDates.length} days)` : ""}`
+              : `Upload & schedule${targetDates.length > 1 ? ` (${targetDates.length} days)` : ""}`)}
         </button>
       </section>
     </div>

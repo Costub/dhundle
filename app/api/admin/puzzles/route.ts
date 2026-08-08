@@ -21,39 +21,81 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Admin access required" }, { status: 401 });
   }
 
-  let body: Partial<AdminPuzzleInput> & { copyFromPuzzleId?: unknown };
+  let body: Partial<AdminPuzzleInput> & {
+    copyFromPuzzleId?: unknown;
+    dates?: unknown;
+  };
   try {
     body = await req.json();
   } catch {
     return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
   }
 
-  try {
-    if (body.copyFromPuzzleId) {
-      await scheduleOrReplacePuzzleFromExisting({
-        sourcePuzzleId: String(body.copyFromPuzzleId),
-        date: String(body.date ?? ""),
-        officialLink: body.officialLink ? String(body.officialLink) : undefined,
-      });
-    } else {
-      await scheduleOrReplacePuzzle({
-        songId: String(body.songId ?? ""),
-        date: String(body.date ?? ""),
-        officialLink: body.officialLink ? String(body.officialLink) : undefined,
-        stems: Array.isArray(body.stems)
-          ? body.stems.map((s) => ({
-              position: Number(s.position),
-              instrument: String(s.instrument ?? ""),
-              storagePath: String(s.storagePath ?? ""),
-            }))
-          : [],
+  // One song can be scheduled across many dates in a single request (e.g. the
+  // same puzzle every day for a month). `dates` wins when present; otherwise
+  // fall back to the single `date`.
+  const MAX_DATES = 92;
+  const rawDates = Array.isArray(body.dates) && body.dates.length
+    ? body.dates
+    : [body.date];
+  const dates = [
+    ...new Set(rawDates.map((d) => String(d ?? "").trim()).filter(Boolean)),
+  ];
+  if (dates.length === 0) {
+    return NextResponse.json({ error: "No date provided" }, { status: 400 });
+  }
+  if (dates.length > MAX_DATES) {
+    return NextResponse.json(
+      { error: `Too many dates at once (max ${MAX_DATES})` },
+      { status: 400 }
+    );
+  }
+
+  const stems = Array.isArray(body.stems)
+    ? body.stems.map((s) => ({
+        position: Number(s.position),
+        instrument: String(s.instrument ?? ""),
+        storagePath: String(s.storagePath ?? ""),
+      }))
+    : [];
+  const officialLink = body.officialLink ? String(body.officialLink) : undefined;
+
+  const scheduled: string[] = [];
+  const failed: { date: string; error: string }[] = [];
+  for (const date of dates.sort()) {
+    try {
+      if (body.copyFromPuzzleId) {
+        await scheduleOrReplacePuzzleFromExisting({
+          sourcePuzzleId: String(body.copyFromPuzzleId),
+          date,
+          officialLink,
+        });
+      } else {
+        await scheduleOrReplacePuzzle({
+          songId: String(body.songId ?? ""),
+          date,
+          officialLink,
+          stems,
+        });
+      }
+      scheduled.push(date);
+    } catch (error) {
+      failed.push({
+        date,
+        error: error instanceof Error ? error.message : "Could not schedule puzzle",
       });
     }
-    return NextResponse.json({ ok: true });
-  } catch (error) {
-    const message = error instanceof Error ? error.message : "Could not schedule puzzle";
-    return NextResponse.json({ error: message }, { status: 400 });
   }
+
+  // Nothing succeeded — surface the first error like a normal validation failure.
+  if (scheduled.length === 0) {
+    return NextResponse.json(
+      { error: failed[0]?.error ?? "Could not schedule puzzle" },
+      { status: 400 }
+    );
+  }
+
+  return NextResponse.json({ ok: failed.length === 0, scheduled, failed });
 }
 
 /** Remove a scheduled puzzle: DELETE ?id=<puzzle id or date>. Stem files are kept. */
